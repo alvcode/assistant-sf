@@ -3,6 +3,7 @@ package command
 import (
 	"assistant-sf/internal/service"
 	"fmt"
+	"github.com/fatih/color"
 	"os"
 	"path/filepath"
 )
@@ -20,6 +21,7 @@ func InitRun() error {
 	if err := os.WriteFile(path, []byte("assistant_url: \"https://you-domain.com\"\n"), 0o644); err != nil {
 		return err
 	}
-	fmt.Println("Created:", path, "\nPlease go to the configuration and specify the URL of your ASSISTANT server.")
+
+	color.Green(fmt.Sprintf("%s %s \n\n%s", "Created:", path, "Please go to the configuration and specify the URL of your ASSISTANT server."))
 	return nil
 }
