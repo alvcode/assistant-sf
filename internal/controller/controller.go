@@ -20,4 +20,11 @@ func InitController(rootCmd *cobra.Command, ctx context.Context) {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return command.AuthRun(ctx)
 		}})
+
+	rootCmd.AddCommand(&cobra.Command{
+		Use:   "from-disk",
+		Short: "Brings the folder to a cloud-like state",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return command.FromDiskRun(ctx)
+		}})
 }

@@ -34,3 +34,11 @@ func GetAppPath() (string, error) {
 
 	return path, nil
 }
+
+func PathExists(dir string) bool {
+	info, err := os.Stat(dir)
+	if err != nil {
+		return false
+	}
+	return info.IsDir()
+}

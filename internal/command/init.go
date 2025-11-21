@@ -4,9 +4,15 @@ import (
 	"assistant-sf/internal/service"
 	"fmt"
 	"github.com/fatih/color"
+	"gopkg.in/yaml.v3"
 	"os"
 	"path/filepath"
 )
+
+type Config struct {
+	AssistantURL string `yaml:"assistant_url"`
+	FolderPath   string `yaml:"folder_path"`
+}
 
 func InitRun() error {
 	appPath, err := service.GetAppPath()
@@ -18,10 +24,21 @@ func InitRun() error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(path, []byte("assistant_url: \"https://you-domain.com\"\n"), 0o644); err != nil {
+
+	cfg := Config{
+		AssistantURL: "https://you-domain.com",
+		FolderPath:   "/path/to/sync/folder",
+	}
+
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
 		return err
 	}
 
-	color.Green(fmt.Sprintf("%s %s \n\n%s", "Created:", path, "Please go to the configuration and specify the URL of your ASSISTANT server."))
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return err
+	}
+
+	color.Green(fmt.Sprintf("%s %s \n\n%s", "Created:", path, "Please go to configuration and specify the settings"))
 	return nil
 }
