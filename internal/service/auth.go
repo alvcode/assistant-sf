@@ -56,3 +56,57 @@ func Authentication(domain string, login string, password string) (*dto.LoginSuc
 
 	return &sr, nil
 }
+
+func RefreshToken(domain string) error {
+	url := domain + "/api/auth/refresh-token"
+
+	token, err := KeyringGetAuthToken()
+	if err != nil {
+		return err
+	}
+	refreshToken, err := KeyringGetRefreshToken()
+	if err != nil {
+
+	}
+
+	reqBody := dto.RefreshTokenRequest{
+		Token:        token,
+		RefreshToken: refreshToken,
+	}
+
+	b, err := json.Marshal(reqBody)
+	if err != nil {
+		return err
+	}
+
+	resp, err := http.Post(url, "application/json", bytes.NewReader(b))
+	if err != nil {
+		return err
+	}
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+			fmt.Println(err)
+		}
+	}(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		var er dto.ErrorResponse
+		if err := json.NewDecoder(resp.Body).Decode(&er); err != nil {
+			return errors.New("refresh token failed. bad response")
+		}
+		return errors.New(er.Message)
+	}
+
+	var sr dto.LoginSuccessResponse
+	if err := json.NewDecoder(resp.Body).Decode(&sr); err != nil {
+		return err
+	}
+
+	err = KeyringSaveTokens(sr.Token, sr.RefreshToken)
+	if err != nil {
+		return errors.New("failed save token")
+	}
+
+	return nil
+}
