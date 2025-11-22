@@ -34,3 +34,8 @@ type DriveTree struct {
 	IsChunk   bool      `json:"is_chunk"`
 	SHA256    *string   `json:"sha256"`
 }
+
+type ChunkInfo struct {
+	StartNumber int `json:"start_number"`
+	EndNumber   int `json:"end_number"`
+}
