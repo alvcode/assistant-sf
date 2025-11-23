@@ -28,45 +28,6 @@ func FromDiskRun(ctx context.Context) error {
 		return nil
 	}
 
-	//tree, err := service.GetTree(cnf.AssistantURL, nil)
-	//if err != nil {
-	//	color.Red(err.Error())
-	//	return nil
-	//}
-	//
-	//for _, node := range tree {
-	//	fmt.Println(node.Name)
-	//	if node.Type == dict.StructTypeFolder {
-	//		if !service.PathExists(filepath.Join(cnf.FolderPath, node.Name)) {
-	//			err := os.MkdirAll(filepath.Join(cnf.FolderPath, node.Name), 0755)
-	//			if err != nil {
-	//				color.Red(fmt.Sprintf("could not create folder %s: %w", node.Name, err.Error()))
-	//				return nil
-	//			}
-	//		}
-	//	} else if node.Type == dict.StructTypeFile {
-	//
-	//	}
-	//}
-	//
-	//entries, err := os.ReadDir(cnf.FolderPath)
-	//if err != nil {
-	//	return err
-	//}
-	//
-	//for _, e := range entries {
-	//	full := filepath.Join(cnf.FolderPath, e.Name())
-	//
-	//	if e.IsDir() {
-	//		fmt.Println("DIR:", full)
-	//		//scan(full)
-	//	} else {
-	//		fmt.Println("FILE:", full)
-	//	}
-	//}
-	//
-	//fmt.Println(tree)
-
 	return nil
 }
 
@@ -87,11 +48,11 @@ func fromDiskRecursive(domain string, localPath string, parentID *int) error {
 	cloudNames := make(map[string]*dto.DriveTree)
 
 	for _, node := range tree {
-		color.Blue("Обработка ноды: %s", node.Name)
+		color.Blue("================= Обработка ноды: %s ===================", node.Name)
 		cloudNames[node.Name] = node
+		dirPath := filepath.Join(localPath, node.Name)
 
 		if node.Type == dict.StructTypeFolder {
-			dirPath := filepath.Join(localPath, node.Name)
 			color.Blue("Это папка. Путь до нее: %s", dirPath)
 
 			// создать если нет
@@ -109,51 +70,89 @@ func fromDiskRecursive(domain string, localPath string, parentID *int) error {
 				return err
 			}
 		} else if node.Type == dict.StructTypeFile {
-			if !node.IsChunk {
-				filePath := filepath.Join(localPath, node.Name)
-				if service.FileExists(filePath) {
-					// сравнение хэшей если различаются - скачиваем.
+			needDownload := false
+			var fileHash string
+
+			if service.FileExists(dirPath) {
+				color.Blue("Файл %s существует", node.Name)
+
+				fileHash, err = service.FileSHA256(dirPath)
+				if err != nil {
+					color.Red("error calculating file hash: %s", err)
+					return nil
+				}
+				if node.SHA256 == nil || fileHash != *node.SHA256 {
+					color.Blue("Хэша на сервере нет или они различаются. Надо загружать")
+					needDownload = true
 				} else {
-					// файла нет, скачиваем
+					color.Blue("Хэш совпадает, не грузим")
+				}
+			} else {
+				needDownload = true
+				color.Blue("Файла локально нет. Надо загружать")
+			}
+
+			if needDownload {
+				if !node.IsChunk {
+					color.Blue("Загружаем обычным способом")
 					fileBytes, err := service.GetFullFile(domain, node.ID)
 					if err != nil {
 						color.Red(err.Error())
 						return nil
 					}
 
-					err = os.WriteFile(filePath, fileBytes, 0644)
+					err = os.WriteFile(dirPath, fileBytes, 0644)
 					if err != nil {
 						color.Red("error save file: %s, %s", node.Name, err.Error())
 						return nil
 					}
+				} else {
+					color.Blue("Файл с чанками: %s", node.Name)
+					maxChunk, err := service.GetMaxChunk(domain, node.ID)
+					if err != nil {
+						color.Red(err.Error())
+						return nil
+					}
+
+					out, err := os.Create(dirPath)
+					if err != nil {
+						color.Red("cannot create file: %w", err)
+						return nil
+					}
+					defer func(out *os.File) {
+						err := out.Close()
+						if err != nil {
+							fmt.Printf("error closing file: %s, %s", node.Name, err.Error())
+						}
+					}(out)
+
+					for i := 0; i <= maxChunk; i++ {
+						color.Blue("Грузим чанк номер %d", i)
+						chunkData, err := service.GetChunk(domain, node.ID, i)
+						if err != nil {
+							color.Red("failed to load chunk %d: %w", i, err)
+							return nil
+						}
+
+						_, err = out.Write(chunkData)
+						if err != nil {
+							color.Red("failed to write chunk %d: %w", i, err)
+							return nil
+						}
+					}
 				}
-			} else {
-				maxChunk, err := service.GetMaxChunk(domain, node.ID)
+
+				fileHash, err = service.FileSHA256(dirPath)
 				if err != nil {
-					return err
+					color.Red("error calculating file hash: %s", err)
+					return nil
 				}
 
-				/**
-				// 2) Создаём файл
-				    out, err := os.Create(dstPath)
-				    if err != nil {
-				        return fmt.Errorf("cannot create file: %w", err)
-				    }
-				    defer out.Close()
-
-				    // 3) Последовательно грузим чанки
-				    for i := 0; i <= maxChunk; i++ {
-				        chunkData, err := getChunk(domain, structID, i)
-				        if err != nil {
-				            return fmt.Errorf("failed to load chunk %d: %w", i, err)
-				        }
-
-				        _, err = out.Write(chunkData)
-				        if err != nil {
-				            return fmt.Errorf("failed to write chunk %d: %w", i, err)
-				        }
-				    }
-				*/
+				err = service.UpdateHash(domain, node.ID, fileHash)
+				if err != nil {
+					color.Red("error update hash: %s, %s", node.Name, err.Error())
+					return nil
+				}
 			}
 		}
 	}

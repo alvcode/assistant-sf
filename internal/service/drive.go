@@ -134,7 +134,7 @@ func GetMaxChunk(domain string, structID int) (int, error) {
 }
 
 func getMaxChunkInternal(domain string, structID int, retry bool) (int, error) {
-	url := fmt.Sprintf("%s/%s/%d/chunks-info", domain, "api/drive/files", structID)
+	url := fmt.Sprintf("%s/api/drive/files/%d/chunks-info", domain, structID)
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -188,21 +188,101 @@ func getMaxChunkInternal(domain string, structID int, retry bool) (int, error) {
 	return result.EndNumber, nil
 }
 
-/**
-func getChunk(domain string, fileID, chunkNumber int) ([]byte, error) {
-    url := fmt.Sprintf("%s/api/drive/files/%d/chunks/%d", domain, fileID, chunkNumber)
-
-    resp, err := http.Get(url)
-    if err != nil {
-        return nil, err
-    }
-    defer resp.Body.Close()
-
-    if resp.StatusCode != http.StatusOK {
-        b, _ := io.ReadAll(resp.Body)
-        return nil, fmt.Errorf("error chunk %d: %s", chunkNumber, string(b))
-    }
-
-    return io.ReadAll(resp.Body)
+func GetChunk(domain string, structID int, chunkNumber int) ([]byte, error) {
+	return getChunkInternal(domain, structID, chunkNumber, false)
 }
-*/
+
+func getChunkInternal(domain string, structID int, chunkNumber int, retry bool) ([]byte, error) {
+	url := fmt.Sprintf("%s/api/drive/files/%d/chunks/%d", domain, structID, chunkNumber)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	token, err := KeyringGetAuthToken()
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+			fmt.Println(err)
+		}
+	}(resp.Body)
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		if retry {
+			return nil, errors.New("unauthorized after refresh")
+		}
+		if err := RefreshToken(domain); err != nil {
+			return nil, fmt.Errorf("refresh token failed: %w", err)
+		}
+		return getChunkInternal(domain, structID, chunkNumber, true)
+	}
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusUnauthorized {
+		var er dto.ErrorResponse
+		if err := json.NewDecoder(resp.Body).Decode(&er); err != nil {
+			return nil, errors.New("failed. bad response")
+		}
+		return nil, errors.New(er.Message)
+	}
+
+	return io.ReadAll(resp.Body)
+}
+
+func UpdateHash(domain string, structID int, hash string) error {
+	return updateHashInternal(domain, structID, hash, false)
+}
+
+func updateHashInternal(domain string, structID int, hash string, retry bool) error {
+	url := fmt.Sprintf("%s/api/drive/files/%d/sha256/%s", domain, structID, hash)
+
+	req, err := http.NewRequest("PATCH", url, nil)
+	if err != nil {
+		return err
+	}
+	token, err := KeyringGetAuthToken()
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+			fmt.Println(err)
+		}
+	}(resp.Body)
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		if retry {
+			return errors.New("unauthorized after refresh")
+		}
+		if err := RefreshToken(domain); err != nil {
+			return fmt.Errorf("refresh token failed: %w", err)
+		}
+		return updateHashInternal(domain, structID, hash, true)
+	}
+
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusUnauthorized {
+		var er dto.ErrorResponse
+		if err := json.NewDecoder(resp.Body).Decode(&er); err != nil {
+			return errors.New("failed. bad response")
+		}
+		return errors.New(er.Message)
+	}
+	return nil
+}
