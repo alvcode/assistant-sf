@@ -3,6 +3,7 @@ package command
 import (
 	"assistant-sf/internal/config"
 	"assistant-sf/internal/service"
+	"bufio"
 	"context"
 	"fmt"
 	"github.com/fatih/color"
@@ -14,21 +15,31 @@ func AuthRun(ctx context.Context) error {
 	cnf := config.MustLoad(ctx)
 
 	fmt.Println("Enter your Assistant account login and password")
-	var login string
+
+	scanner := bufio.NewScanner(os.Stdin)
 	fmt.Print("Login: ")
-	_, err := fmt.Scanln(&login)
-	if err != nil {
-		return err
+	if !scanner.Scan() {
+		if err := scanner.Err(); err != nil {
+			return err
+		}
+		return fmt.Errorf("failed to read login")
+	}
+	login := scanner.Text()
+	if login == "" {
+		return fmt.Errorf("login cannot be empty")
 	}
 
 	fmt.Print("Password: ")
 	passBytes, err := term.ReadPassword(int(os.Stdin.Fd()))
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to read password: %w", err)
 	}
 	fmt.Println()
 
 	password := string(passBytes)
+	if password == "" {
+		return fmt.Errorf("password cannot be empty")
+	}
 
 	_, err = service.Authentication(cnf.AssistantURL, login, password)
 	if err != nil {

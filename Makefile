@@ -6,3 +6,6 @@ auth:
 
 from-disk:
 	go run cmd/main.go from-disk
+
+to-disk:
+	go run cmd/main.go to-disk
