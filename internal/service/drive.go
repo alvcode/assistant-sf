@@ -1,6 +1,7 @@
 package service
 
 import (
+	"assistant-sf/internal/dict"
 	"assistant-sf/internal/dto"
 	"bytes"
 	"encoding/json"
@@ -506,14 +507,274 @@ func uploadFileInternal(domain string, filePath string, parentID *int, retry boo
 }
 
 func UploadFileByChunks(domain string, filePath string, parentID *int) ([]*dto.DriveTree, error) {
-	/**
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer func(file *os.File) {
+		err := file.Close()
+		if err != nil {
+			fmt.Println(err)
+		}
+	}(file)
 
-	 */
-	return uploadFileByChunksInternal(domain, filePath, parentID, false)
+	info, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+
+	newStructID, err := uploadChunkPrepare(domain, info.Name(), info.Size(), parentID, false)
+	if err != nil {
+		return nil, err
+	}
+
+	buf := make([]byte, dict.ChunkSize)
+	chunkIndex := 0
+
+	for {
+		n, err := file.Read(buf)
+		if n > 0 {
+			if err := uploadFileByChunksInternal(domain, buf[:n], parentID, newStructID, chunkIndex, false); err != nil {
+				return nil, err
+			}
+			chunkIndex++
+		}
+
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			errDel := deleteStructInternal(domain, newStructID, false)
+			if errDel != nil {
+				return nil, fmt.Errorf("delete struct failed: %w; after error upload chunk: %w", errDel, err)
+			}
+			return nil, fmt.Errorf("upload chunk failed: %w", err)
+		}
+	}
+
+	err = chunkEndInternal(domain, newStructID, false)
+	if err != nil {
+		errDel := deleteStructInternal(domain, newStructID, false)
+		if errDel != nil {
+			return nil, fmt.Errorf("delete struct failed: %w; after error upload chunk: %w", errDel, err)
+		}
+		return nil, fmt.Errorf("chunk end failed: %w", err)
+	}
+
+	tree, err := GetTree(domain, parentID)
+	if err != nil {
+		return nil, err
+	}
+	return tree, nil
 }
 
-func uploadChunkPrepare
+/** Завершение загрузки чанками */
+func chunkEndInternal(domain string, structID int, retry bool) error {
+	url := fmt.Sprintf("%s/%s", domain, "api/drive/chunk-end")
 
-func uploadFileByChunksInternal(domain string, filePath string, parentID *int, retry bool) ([]*dto.DriveTree, error) {
+	requestBody := map[string]interface{}{
+		"struct_id": structID,
+	}
 
+	jsonBody, err := json.Marshal(requestBody)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return err
+	}
+	token, err := KeyringGetAuthToken()
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+			fmt.Println(err)
+		}
+	}(resp.Body)
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		if retry {
+			return errors.New("unauthorized after refresh")
+		}
+		if err := RefreshToken(domain); err != nil {
+			return fmt.Errorf("refresh token failed: %w", err)
+		}
+		return chunkEndInternal(domain, structID, true)
+	}
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusUnauthorized {
+		var er dto.ErrorResponse
+		if err := json.NewDecoder(resp.Body).Decode(&er); err != nil {
+			return errors.New("failed. bad response")
+		}
+		return errors.New(er.Message)
+	}
+
+	return nil
+}
+
+/** Загрузка чанками */
+func uploadFileByChunksInternal(domain string, chunk []byte, parentID *int, structID int, chunkNumber int, retry bool) error {
+	var url string
+	if parentID == nil {
+		url = fmt.Sprintf(
+			"%s/%s?structId=%d&chunkNumber=%d",
+			domain,
+			"api/drive/upload-chunk",
+			structID,
+			chunkNumber,
+		)
+	} else {
+		url = fmt.Sprintf(
+			"%s/%s?structId=%d&chunkNumber=%d&parentId=%d",
+			domain,
+			"api/drive/upload-chunk",
+			structID,
+			chunkNumber,
+			*parentID,
+		)
+	}
+
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+
+	part, err := writer.CreateFormFile("file", "chunk.bin")
+	if err != nil {
+		return err
+	}
+
+	if _, err = part.Write(chunk); err != nil {
+		return err
+	}
+
+	if err = writer.Close(); err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, url, &buf)
+	if err != nil {
+		return err
+	}
+	token, err := KeyringGetAuthToken()
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+			fmt.Println(err)
+		}
+	}(resp.Body)
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		if retry {
+			return errors.New("unauthorized after refresh")
+		}
+		if err := RefreshToken(domain); err != nil {
+			return fmt.Errorf("refresh token failed: %w", err)
+		}
+		return uploadFileByChunksInternal(domain, chunk, parentID, structID, chunkNumber, true)
+	}
+
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusUnauthorized {
+		var er dto.ErrorResponse
+		if err := json.NewDecoder(resp.Body).Decode(&er); err != nil {
+			return errors.New("failed. bad response")
+		}
+		return errors.New(er.Message)
+	}
+
+	return nil
+}
+
+/** Подготовка к загрузке чанками, получение structID */
+func uploadChunkPrepare(domain string, filename string, size int64, parentID *int, retry bool) (int, error) {
+	url := fmt.Sprintf("%s/%s", domain, "api/drive/chunk-prepare")
+
+	requestBody := map[string]interface{}{
+		"filename":  filename,
+		"full_size": size,
+		"parent_id": nil,
+		"sha256":    nil,
+	}
+	if parentID != nil {
+		requestBody["parent_id"] = *parentID
+	}
+
+	jsonBody, err := json.Marshal(requestBody)
+	if err != nil {
+		return 0, err
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return 0, err
+	}
+	token, err := KeyringGetAuthToken()
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return 0, err
+	}
+
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+			fmt.Println(err)
+		}
+	}(resp.Body)
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		if retry {
+			return 0, errors.New("unauthorized after refresh")
+		}
+		if err := RefreshToken(domain); err != nil {
+			return 0, fmt.Errorf("refresh token failed: %w", err)
+		}
+		return uploadChunkPrepare(domain, filename, size, parentID, true)
+	}
+
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusUnauthorized {
+		var er dto.ErrorResponse
+		if err := json.NewDecoder(resp.Body).Decode(&er); err != nil {
+			return 0, errors.New("failed. bad response")
+		}
+		return 0, errors.New(er.Message)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return 0, err
+	}
+
+	var result *dto.ChunkPrepareResponse
+	if err := json.Unmarshal(body, &result); err != nil {
+		return 0, err
+	}
+	return result.StructID, nil
 }

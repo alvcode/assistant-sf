@@ -39,3 +39,7 @@ type ChunkInfo struct {
 	StartNumber int `json:"start_number"`
 	EndNumber   int `json:"end_number"`
 }
+
+type ChunkPrepareResponse struct {
+	StructID int `json:"struct_id"`
+}

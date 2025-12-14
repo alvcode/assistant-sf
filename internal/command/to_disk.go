@@ -6,12 +6,11 @@ import (
 	"assistant-sf/internal/dto"
 	"assistant-sf/internal/service"
 	"context"
+	"fmt"
 	"github.com/fatih/color"
 	"os"
 	"path/filepath"
 )
-
-const ChunkSize = 45 * 1024 * 1024
 
 func ToDiskRun(ctx context.Context) error {
 	cnf := config.MustLoad(ctx)
@@ -95,8 +94,11 @@ func toDiskRecursive(domain string, localPath string, parentID *int) error {
 				}
 				for _, newNode := range newTree {
 					if newNode.Name == le.Name() {
-						cloudNames[node.Name] = newNode
+						cloudNames[newNode.Name] = newNode
 					}
+				}
+				if err := toDiskRecursive(domain, dirPath, &node.ID); err != nil {
+					return err
 				}
 			} else {
 				color.Blue("На сервере папка есть. Рекурсивное проваливание")
@@ -107,6 +109,13 @@ func toDiskRecursive(domain string, localPath string, parentID *int) error {
 		} else {
 			color.Blue("Это файл")
 			node, ok := cloudNames[le.Name()]
+
+			sha256, hashErr := service.FileSHA256(dirPath)
+			if hashErr != nil {
+				color.Red(hashErr.Error())
+				return nil
+			}
+
 			if !ok || node.Type != dict.StructTypeFile {
 				if ok && node.Type != dict.StructTypeFile {
 					color.Blue("На сервере НЕ ФАЙЛ. Удаляем")
@@ -117,15 +126,59 @@ func toDiskRecursive(domain string, localPath string, parentID *int) error {
 					}
 				}
 
-				newTree := make([]*dto.DriveTree, 0)
-				if localInfo.Size() <= ChunkSize {
-					newTree, err = service.UploadFile(domain, dirPath, parentID)
-				} else {
-
-				}
 				color.Blue("На сервере файла нет. Загрузка. Обновление хэша. Добавляем ноду в cloudNames")
+
+				newTree := make([]*dto.DriveTree, 0)
+				if localInfo.Size() <= dict.ChunkSize {
+					color.Blue("Грузим обычным способом")
+					newTree, err = service.UploadFile(domain, dirPath, parentID)
+					if err != nil {
+						color.Red(fmt.Sprintf("error upload file: %v", err))
+					}
+				} else {
+					color.Blue("Грузим чанками")
+					newTree, err = service.UploadFileByChunks(domain, dirPath, parentID)
+					if err != nil {
+						color.Red(fmt.Sprintf("error upload file: %v", err))
+					}
+				}
+				for _, newNode := range newTree {
+					if newNode.Name == le.Name() {
+						errUpdSha256 := service.UpdateHash(domain, newNode.ID, sha256)
+						if errUpdSha256 != nil {
+							color.Red(fmt.Sprintf("error update hash: %v", errUpdSha256))
+							return nil
+						}
+						cloudNames[newNode.Name] = newNode
+					}
+				}
 			} else {
 				color.Blue("На сервере файл есть. Сверяем хэш. Если нету или разница - удаление, загрузка, обновление хэша, добавление в cloudNames")
+				if node.SHA256 == nil || *node.SHA256 != sha256 {
+					err := service.DeleteStruct(domain, node.ID)
+					if err != nil {
+						color.Red("error delete struct: %v", err)
+						return nil
+					}
+
+					newTree := make([]*dto.DriveTree, 0)
+					if localInfo.Size() <= dict.ChunkSize {
+						newTree, err = service.UploadFile(domain, dirPath, parentID)
+					} else {
+						newTree, err = service.UploadFileByChunks(domain, dirPath, parentID)
+					}
+
+					for _, newNode := range newTree {
+						if newNode.Name == le.Name() {
+							errUpdSha256 := service.UpdateHash(domain, newNode.ID, sha256)
+							if errUpdSha256 != nil {
+								color.Red(fmt.Sprintf("error update hash: %v", errUpdSha256))
+								return nil
+							}
+							cloudNames[newNode.Name] = newNode
+						}
+					}
+				}
 			}
 		}
 	}
@@ -135,13 +188,24 @@ func toDiskRecursive(domain string, localPath string, parentID *int) error {
 		dirPath := filepath.Join(localPath, node.Name)
 		color.Blue("cloudPath: %s", dirPath)
 
+		needDelete := false
 		if node.Type == dict.StructTypeFile {
 			if !service.FileExists(dirPath) {
 				color.Blue("Локально файла нет. Удаляем на сервере")
+				needDelete = true
 			}
 		} else if node.Type == dict.StructTypeFolder {
 			if !service.PathExists(dirPath) {
 				color.Blue("Локально папки нет. Удаляем на сервере")
+				needDelete = true
+			}
+		}
+
+		if needDelete {
+			err := service.DeleteStruct(domain, node.ID)
+			if err != nil {
+				color.Red("error delete struct: %v", err)
+				return nil
 			}
 		}
 	}
