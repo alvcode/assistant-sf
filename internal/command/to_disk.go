@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 )
 
+const ChunkSize = 45 * 1024 * 1024
+
 func ToDiskRun(ctx context.Context) error {
 	cnf := config.MustLoad(ctx)
 
@@ -78,8 +80,24 @@ func toDiskRecursive(domain string, localPath string, parentID *int) error {
 			if !ok || node.Type != dict.StructTypeFolder {
 				if ok && node.Type != dict.StructTypeFolder {
 					color.Blue("На сервере НЕ ПАПКА. Удаляем")
+					err := service.DeleteStruct(domain, node.ID)
+					if err != nil {
+						color.Red("error delete struct: %v", err)
+						return nil
+					}
 				}
+
 				color.Blue("На сервере папки нет. Создаем. Тут надо получать ID для рекурсивного проваливания. А может быть обновлять по ключу ноду из ответа")
+				newTree, err := service.CreateDir(domain, le.Name(), parentID)
+				if err != nil {
+					color.Red("error create dir: %v", err)
+					return nil
+				}
+				for _, newNode := range newTree {
+					if newNode.Name == le.Name() {
+						cloudNames[node.Name] = newNode
+					}
+				}
 			} else {
 				color.Blue("На сервере папка есть. Рекурсивное проваливание")
 				if err := toDiskRecursive(domain, dirPath, &node.ID); err != nil {
@@ -92,6 +110,18 @@ func toDiskRecursive(domain string, localPath string, parentID *int) error {
 			if !ok || node.Type != dict.StructTypeFile {
 				if ok && node.Type != dict.StructTypeFile {
 					color.Blue("На сервере НЕ ФАЙЛ. Удаляем")
+					err := service.DeleteStruct(domain, node.ID)
+					if err != nil {
+						color.Red("error delete struct: %v", err)
+						return nil
+					}
+				}
+
+				newTree := make([]*dto.DriveTree, 0)
+				if localInfo.Size() <= ChunkSize {
+					newTree, err = service.UploadFile(domain, dirPath, parentID)
+				} else {
+
 				}
 				color.Blue("На сервере файла нет. Загрузка. Обновление хэша. Добавляем ноду в cloudNames")
 			} else {
