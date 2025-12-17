@@ -1,3 +1,6 @@
+help:
+	go run cmd/main.go --help
+
 init:
 	go run cmd/main.go init
 
@@ -9,3 +12,9 @@ from-disk:
 
 to-disk:
 	go run cmd/main.go to-disk
+
+sync-server:
+	go run cmd/main.go sync --head server
+
+sync-local:
+	go run cmd/main.go sync --head local
