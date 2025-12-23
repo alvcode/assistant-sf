@@ -56,6 +56,7 @@ func InitController(rootCmd *cobra.Command, ctx context.Context) {
 				stopSpinner()
 				color.Red(err.Error())
 			}
+			stopSpinner()
 			return nil
 		}}
 	rootCmd.AddCommand(syncCommand)

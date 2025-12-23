@@ -10,6 +10,7 @@ import (
 	"github.com/fatih/color"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 func ToDiskRun(ctx context.Context) error {
@@ -61,6 +62,9 @@ func toDiskRecursive(domain string, localPath string, parentID *int) error {
 	}
 
 	for _, le := range localEntries {
+		if strings.Contains(le.Name(), ":") {
+			continue
+		}
 		color.Blue("=================== localEntry - %s ========================", le.Name())
 
 		dirPath := filepath.Join(localPath, le.Name())
