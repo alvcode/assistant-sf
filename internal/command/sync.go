@@ -238,10 +238,14 @@ func syncRecursive(domain string, head string, localPath string, parentID *int) 
 				for _, newNode := range newTree {
 					if newNode.Name == le.Name() {
 						cloudNames[newNode.Name] = newNode
+						break
 					}
 				}
-				if err := syncRecursive(domain, head, dirPath, &node.ID); err != nil {
-					return err
+				node, ok = cloudNames[le.Name()]
+				if ok {
+					if err := syncRecursive(domain, head, dirPath, &node.ID); err != nil {
+						return err
+					}
 				}
 			}
 		} else {

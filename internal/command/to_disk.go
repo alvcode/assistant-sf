@@ -101,8 +101,12 @@ func toDiskRecursive(domain string, localPath string, parentID *int) error {
 						cloudNames[newNode.Name] = newNode
 					}
 				}
-				if err := toDiskRecursive(domain, dirPath, &node.ID); err != nil {
-					return err
+
+				node, ok = cloudNames[le.Name()]
+				if ok {
+					if err := toDiskRecursive(domain, dirPath, &node.ID); err != nil {
+						return err
+					}
 				}
 			} else {
 				color.Blue("На сервере папка есть. Рекурсивное проваливание")
