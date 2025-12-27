@@ -14,7 +14,7 @@ import (
 func AuthRun(ctx context.Context) error {
 	cnf := config.MustLoad(ctx)
 
-	fmt.Println("Enter your Assistant account login and password")
+	color.Blue("Enter your Assistant account login and password")
 
 	scanner := bufio.NewScanner(os.Stdin)
 	fmt.Print("Login: ")
@@ -43,8 +43,7 @@ func AuthRun(ctx context.Context) error {
 
 	_, err = service.Authentication(cnf.AssistantURL, login, password)
 	if err != nil {
-		color.Red(err.Error())
-		return nil
+		return err
 	}
 
 	color.Green("Authentication successful")

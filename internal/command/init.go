@@ -17,12 +17,12 @@ type Config struct {
 func InitRun() error {
 	appPath, err := service.GetAppPath()
 	if err != nil {
-		return err
+		return fmt.Errorf("error get path application: %v", err)
 	}
 	path := filepath.Join(appPath, "main.yaml")
 
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
+		return fmt.Errorf("error create directory: %v", err)
 	}
 
 	cfg := Config{
@@ -32,11 +32,11 @@ func InitRun() error {
 
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
-		return err
+		return fmt.Errorf("error marshall config: %v", err)
 	}
 
 	if err := os.WriteFile(path, data, 0o644); err != nil {
-		return err
+		return fmt.Errorf("error write config: %v", err)
 	}
 
 	color.Green(fmt.Sprintf("%s %s \n\n%s", "Created:", path, "Please go to configuration and specify the settings"))

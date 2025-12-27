@@ -14,14 +14,18 @@ import (
 	"strings"
 )
 
-func SyncRun(ctx context.Context, head string) error {
+func SyncRun(ctx context.Context, head string, isDebug bool) error {
 	cnf := config.MustLoad(ctx)
 
 	if !service.PathExists(cnf.FolderPath) {
 		return errors.New("folder does not exist. Create a folder and specify the path to it in the configuration")
 	}
 
-	err := syncRecursive(cnf.AssistantURL, head, cnf.FolderPath, nil)
+	if isDebug {
+		color.Yellow("sync folder exists")
+	}
+
+	err := syncRecursive(cnf.AssistantURL, head, cnf.FolderPath, nil, isDebug)
 	if err != nil {
 		return err
 	}
@@ -29,7 +33,7 @@ func SyncRun(ctx context.Context, head string) error {
 	return nil
 }
 
-func syncRecursive(domain string, head string, localPath string, parentID *int) error {
+func syncRecursive(domain string, head string, localPath string, parentID *int, isDebug bool) error {
 	var convertParent int
 	if parentID != nil {
 		convertParent = *parentID
@@ -37,22 +41,10 @@ func syncRecursive(domain string, head string, localPath string, parentID *int) 
 		convertParent = 0
 	}
 
-	/**
-	Грузим дерево с сервера. *
-	Делаем проход по дереву облака *
-		Если папка. Проверяем есть ли локально. Если нет - создаем, проваливаемся. Если да - проваливаемся *
-		Если файл. Есть ли локально? Если нет - скачивание, обновление хэша (если его нет). Если есть:
-			- смотрим хэш. Если на сервере нет или различается. *
-				При режиме local - удаляем на сервере, загружаем с локалки, обновляем хэш *
-				При режиме server - скачиваем с сервера, обновляем хэш *
-			- если хэш совпадает - пропуск *
-	Делаем проход по локальному дереву
-		* Если папка. Проверяем есть ли в облаке. Если нет - создаем, проваливаемся. ?Если да - проваливаемся.?
-									(вот тут подумать, может надо разделить на 2 метода, чтобы не выполнять одно и тоже)
-		Если файл. Есть ли на сервере? Если нет - грузим, обновляем хэш. Если есть - предполагаем, что на предыдущем уровне все уже сделано
-	*/
+	if isDebug {
+		color.Yellow("Делаем запрос дерева. parentID: %d", convertParent)
+	}
 
-	color.Blue("Делаем запрос дерева. parentID: %d", convertParent)
 	tree, err := service.GetTree(domain, parentID)
 	if err != nil {
 		return fmt.Errorf("error get tree from server: %v", err)
@@ -61,16 +53,22 @@ func syncRecursive(domain string, head string, localPath string, parentID *int) 
 	cloudNames := make(map[string]*dto.DriveTree)
 
 	for _, node := range tree {
-		color.Blue("================= Cloud - Обработка ноды: %s ===================", node.Name)
+		if isDebug {
+			color.Yellow("========= Cloud - Обработка ноды: %s ==========", node.Name)
+		}
 		cloudNames[node.Name] = node
 		dirPath := filepath.Join(localPath, node.Name)
 
 		if node.Type == dict.StructTypeFolder {
-			color.Blue("Это папка. Путь до нее: %s", dirPath)
+			if isDebug {
+				color.Yellow("Это папка. Путь до нее: %s", dirPath)
+			}
 
 			// создать если нет
 			if !service.PathExists(dirPath) {
-				color.Blue("Создаем её")
+				if isDebug {
+					color.Yellow("Её нет. Создаем")
+				}
 				err := os.MkdirAll(dirPath, 0755)
 				if err != nil {
 					return fmt.Errorf("could not create folder %s: %w", node.Name, err)
@@ -79,7 +77,7 @@ func syncRecursive(domain string, head string, localPath string, parentID *int) 
 
 			// рекурсивно обойти вложенные
 			id := node.ID
-			if err := syncRecursive(domain, head, dirPath, &id); err != nil {
+			if err := syncRecursive(domain, head, dirPath, &id, isDebug); err != nil {
 				return err
 			}
 		} else if node.Type == dict.StructTypeFile {
@@ -88,30 +86,40 @@ func syncRecursive(domain string, head string, localPath string, parentID *int) 
 			var fileHash string
 
 			if service.FileExists(dirPath) {
-				color.Blue("Файл %s существует", node.Name)
+				if isDebug {
+					color.Yellow("Файл %s существует", node.Name)
+				}
 
 				fileHash, err = service.FileSHA256(dirPath)
 				if err != nil {
 					return fmt.Errorf("error calculating file hash: %s", err)
 				}
 				if node.SHA256 == nil || fileHash != *node.SHA256 {
-					color.Blue("Хэша на сервере нет или они различаются. Надо загружать")
+					if isDebug {
+						color.Yellow("Хэша на сервере нет или они различаются. Надо загружать")
+					}
 					if head == "local" {
 						needUpload = true
 					} else if head == "server" {
 						needDownload = true
 					}
 				} else {
-					color.Blue("Хэш совпадает, не грузим")
+					if isDebug {
+						color.Yellow("Хэш совпадает, не грузим")
+					}
 				}
 			} else {
 				needDownload = true
-				color.Blue("Файла локально нет. Надо загружать")
+				if isDebug {
+					color.Yellow("Файла локально нет. Надо загружать")
+				}
 			}
 
 			if needDownload {
 				if !node.IsChunk {
-					color.Blue("Загружаем обычным способом")
+					if isDebug {
+						color.Yellow("Загружаем обычным способом")
+					}
 					fileBytes, err := service.GetFullFile(domain, node.ID)
 					if err != nil {
 						return fmt.Errorf("error get file: %w", err)
@@ -122,7 +130,9 @@ func syncRecursive(domain string, head string, localPath string, parentID *int) 
 						return fmt.Errorf("error save file: %s, %w", node.Name, err)
 					}
 				} else {
-					color.Blue("Файл с чанками: %s", node.Name)
+					if isDebug {
+						color.Yellow("Файл с чанками: %s", node.Name)
+					}
 					maxChunk, err := service.GetMaxChunk(domain, node.ID)
 					if err != nil {
 						return fmt.Errorf("error get max chunk: %w", err)
@@ -140,7 +150,9 @@ func syncRecursive(domain string, head string, localPath string, parentID *int) 
 					}(out)
 
 					for i := 0; i <= maxChunk; i++ {
-						color.Blue("Грузим чанк номер %d", i)
+						if isDebug {
+							color.Yellow("Грузим чанк номер %d", i)
+						}
 						chunkData, err := service.GetChunk(domain, node.ID, i)
 						if err != nil {
 							return fmt.Errorf("failed to load chunk %d: %w", i, err)
@@ -165,7 +177,9 @@ func syncRecursive(domain string, head string, localPath string, parentID *int) 
 			}
 
 			if needUpload {
-				color.Blue("меняем на сервере")
+				if isDebug {
+					color.Yellow("меняем на сервере")
+				}
 				err := service.DeleteStruct(domain, node.ID)
 				if err != nil {
 					return fmt.Errorf("error delete struct: %v", err)
@@ -178,13 +192,17 @@ func syncRecursive(domain string, head string, localPath string, parentID *int) 
 
 				newTree := make([]*dto.DriveTree, 0)
 				if localInfo.Size() <= dict.ChunkSize {
-					color.Blue("Грузим обычным способом")
+					if isDebug {
+						color.Yellow("Грузим обычным способом")
+					}
 					newTree, err = service.UploadFile(domain, dirPath, parentID)
 					if err != nil {
 						return fmt.Errorf("upload fail: %w", err)
 					}
 				} else {
-					color.Blue("Грузим чанками")
+					if isDebug {
+						color.Yellow("Грузим чанками")
+					}
 					newTree, err = service.UploadFileByChunks(domain, dirPath, parentID)
 					if err != nil {
 						return fmt.Errorf("upload fail: %w", err)
@@ -215,11 +233,18 @@ func syncRecursive(domain string, head string, localPath string, parentID *int) 
 		return fmt.Errorf("cannot read local directory: %w", err)
 	}
 
+	if isDebug {
+		color.Yellow("============== Делаем обратное сканирование =============")
+	}
 	for _, le := range localEntries {
 		if strings.Contains(le.Name(), ":") {
 			continue
 		}
 		dirPath := filepath.Join(localPath, le.Name())
+
+		if isDebug {
+			color.Yellow("Обработка ноды: %s", dirPath)
+		}
 
 		localInfo, err := os.Stat(dirPath)
 		if err != nil {
@@ -230,7 +255,9 @@ func syncRecursive(domain string, head string, localPath string, parentID *int) 
 
 		if localIsDir {
 			if !ok {
-				color.Blue("На сервере папки нет. Создаем. Тут надо получать ID для рекурсивного проваливания. А может быть обновлять по ключу ноду из ответа")
+				if isDebug {
+					color.Yellow("На сервере папки нет. Создаем. Тут надо получать ID для рекурсивного проваливания. А может быть обновлять по ключу ноду из ответа")
+				}
 				newTree, err := service.CreateDir(domain, le.Name(), parentID)
 				if err != nil {
 					return fmt.Errorf("error create dir: %v", err)
@@ -243,13 +270,15 @@ func syncRecursive(domain string, head string, localPath string, parentID *int) 
 				}
 				node, ok = cloudNames[le.Name()]
 				if ok {
-					if err := syncRecursive(domain, head, dirPath, &node.ID); err != nil {
+					if err := syncRecursive(domain, head, dirPath, &node.ID, isDebug); err != nil {
 						return err
 					}
 				}
 			}
 		} else {
-			color.Blue("Это файл")
+			if isDebug {
+				color.Yellow("Это файл")
+			}
 
 			sha256, hashErr := service.FileSHA256(dirPath)
 			if hashErr != nil {
@@ -260,13 +289,17 @@ func syncRecursive(domain string, head string, localPath string, parentID *int) 
 				newTree := make([]*dto.DriveTree, 0)
 
 				if localInfo.Size() <= dict.ChunkSize {
-					color.Blue("Грузим обычным способом")
+					if isDebug {
+						color.Yellow("Грузим обычным способом")
+					}
 					newTree, err = service.UploadFile(domain, dirPath, parentID)
 					if err != nil {
 						return fmt.Errorf("upload fail: %w", err)
 					}
 				} else {
-					color.Blue("Грузим чанками")
+					if isDebug {
+						color.Yellow("Грузим чанками")
+					}
 					newTree, err = service.UploadFileByChunks(domain, dirPath, parentID)
 					if err != nil {
 						return fmt.Errorf(fmt.Sprintf("error upload file: %v", err))
@@ -280,6 +313,10 @@ func syncRecursive(domain string, head string, localPath string, parentID *int) 
 						}
 						cloudNames[newNode.Name] = newNode
 					}
+				}
+			} else {
+				if isDebug {
+					color.Yellow("Уже есть на сервере. Ничего не делаем")
 				}
 			}
 		}

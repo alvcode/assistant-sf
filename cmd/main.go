@@ -16,7 +16,7 @@ func main() {
 	ctx = logging.ContextWithLogger(ctx, logger)
 
 	rootCmd := &cobra.Command{
-		Use:   "ast-sf",
+		Use:   "syncf",
 		Short: "CLI commands",
 	}
 

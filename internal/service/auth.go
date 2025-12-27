@@ -51,7 +51,7 @@ func Authentication(domain string, login string, password string) (*dto.LoginSuc
 
 	err = KeyringSaveTokens(sr.Token, sr.RefreshToken)
 	if err != nil {
-		return nil, fmt.Errorf("failed save token", err)
+		return nil, fmt.Errorf("failed save token: %v", err)
 	}
 
 	return &sr, nil

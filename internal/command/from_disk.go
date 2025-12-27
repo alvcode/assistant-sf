@@ -6,58 +6,69 @@ import (
 	"assistant-sf/internal/dto"
 	"assistant-sf/internal/service"
 	"context"
+	"errors"
 	"fmt"
 	"github.com/fatih/color"
 	"os"
 	"path/filepath"
 )
 
-func FromDiskRun(ctx context.Context) error {
+func FromDiskRun(ctx context.Context, isDebug bool) error {
 	cnf := config.MustLoad(ctx)
 
 	if !service.PathExists(cnf.FolderPath) {
-		color.Red("Folder does not exist. Create a folder and specify the path to it in the configuration")
-		return nil
+		return errors.New("folder does not exist. Create a folder and specify the path to it in the configuration")
 	}
 
-	color.Green("folder exists")
+	if isDebug {
+		color.Yellow("sync folder exists")
+	}
 
-	err := fromDiskRecursive(cnf.AssistantURL, cnf.FolderPath, nil)
+	err := fromDiskRecursive(cnf.AssistantURL, cnf.FolderPath, nil, isDebug)
 	if err != nil {
-		color.Red(err.Error())
-		return nil
+		return err
 	}
 
 	return nil
 }
 
-func fromDiskRecursive(domain string, localPath string, parentID *int) error {
+func fromDiskRecursive(domain string, localPath string, parentID *int, isDebug bool) error {
 	var convertParent int
 	if parentID != nil {
 		convertParent = *parentID
 	} else {
 		convertParent = 0
 	}
-	color.Blue("Делаем запрос дерева. parentID: %d", convertParent)
+
+	if isDebug {
+		color.Yellow("Делаем запрос дерева. parentID: %d", convertParent)
+	}
+
 	tree, err := service.GetTree(domain, parentID)
 	if err != nil {
-		color.Red(err.Error())
-		return nil
+		return fmt.Errorf("error get tree from server: %v", err)
 	}
 
 	cloudNames := make(map[string]*dto.DriveTree)
 
 	for _, node := range tree {
-		color.Blue("================= Обработка ноды: %s ===================", node.Name)
+		if isDebug {
+			color.Yellow("======= Обработка ноды: %s ==========", node.Name)
+		}
+
 		cloudNames[node.Name] = node
 		dirPath := filepath.Join(localPath, node.Name)
 
 		if node.Type == dict.StructTypeFolder {
-			color.Blue("Это папка. Путь до нее: %s", dirPath)
+			if isDebug {
+				color.Yellow("Это папка. Путь до нее: %s", dirPath)
+			}
 
 			// создать если нет
 			if !service.PathExists(dirPath) {
-				color.Blue("Создаем её")
+				if isDebug {
+					color.Yellow("Создаем папку")
+				}
 				err := os.MkdirAll(dirPath, 0755)
 				if err != nil {
 					return fmt.Errorf("could not create folder %s: %w", node.Name, err)
@@ -66,7 +77,7 @@ func fromDiskRecursive(domain string, localPath string, parentID *int) error {
 
 			// рекурсивно обойти вложенные
 			id := node.ID
-			if err := fromDiskRecursive(domain, dirPath, &id); err != nil {
+			if err := fromDiskRecursive(domain, dirPath, &id, isDebug); err != nil {
 				return err
 			}
 		} else if node.Type == dict.StructTypeFile {
@@ -74,50 +85,57 @@ func fromDiskRecursive(domain string, localPath string, parentID *int) error {
 			var fileHash string
 
 			if service.FileExists(dirPath) {
-				color.Blue("Файл %s существует", node.Name)
+				if isDebug {
+					color.Yellow("Файл %s существует", node.Name)
+				}
 
 				fileHash, err = service.FileSHA256(dirPath)
 				if err != nil {
-					color.Red("error calculating file hash: %s", err)
-					return nil
+					return fmt.Errorf("error calculating file hash: %s", err)
 				}
 				if node.SHA256 == nil || fileHash != *node.SHA256 {
-					color.Blue("Хэша на сервере нет или они различаются. Надо загружать")
+					if isDebug {
+						color.Yellow("Хэша на сервере нет или они различаются. Загружаем")
+					}
 					needDownload = true
 				} else {
-					color.Blue("Хэш совпадает, не грузим")
+					if isDebug {
+						color.Yellow("Хэш совпадает, не грузим")
+					}
 				}
 			} else {
 				needDownload = true
-				color.Blue("Файла локально нет. Надо загружать")
+				if isDebug {
+					color.Yellow("Файла локально нет. Загружаем")
+				}
 			}
 
 			if needDownload {
 				if !node.IsChunk {
-					color.Blue("Загружаем обычным способом")
+					if isDebug {
+						color.Yellow("Загружаем обычным способом")
+					}
 					fileBytes, err := service.GetFullFile(domain, node.ID)
 					if err != nil {
-						color.Red(err.Error())
-						return nil
+						return fmt.Errorf("could not get file from server: %v", err)
 					}
 
 					err = os.WriteFile(dirPath, fileBytes, 0644)
 					if err != nil {
-						color.Red("error save file: %s, %s", node.Name, err.Error())
-						return nil
+						return fmt.Errorf("error save file: %s, %s", node.Name, err.Error())
 					}
 				} else {
-					color.Blue("Файл с чанками: %s", node.Name)
+					if isDebug {
+						color.Yellow("Загружаем чанками")
+					}
 					maxChunk, err := service.GetMaxChunk(domain, node.ID)
 					if err != nil {
-						color.Red(err.Error())
-						return nil
+						return fmt.Errorf("could not get max chunk from server: %v", err)
 					}
 
 					out, err := os.Create(dirPath)
 					if err != nil {
-						color.Red("cannot create file: %w", err)
-						return nil
+						return fmt.Errorf("cannot create file: %w", err)
 					}
 					defer func(out *os.File) {
 						err := out.Close()
@@ -127,31 +145,29 @@ func fromDiskRecursive(domain string, localPath string, parentID *int) error {
 					}(out)
 
 					for i := 0; i <= maxChunk; i++ {
-						color.Blue("Грузим чанк номер %d", i)
+						if isDebug {
+							color.Yellow("Грузим чанк номер %d", i)
+						}
 						chunkData, err := service.GetChunk(domain, node.ID, i)
 						if err != nil {
-							color.Red("failed to load chunk %d: %w", i, err)
-							return nil
+							return fmt.Errorf("failed to load chunk %d: %w", i, err)
 						}
 
 						_, err = out.Write(chunkData)
 						if err != nil {
-							color.Red("failed to write chunk %d: %w", i, err)
-							return nil
+							return fmt.Errorf("failed to write chunk %d: %w", i, err)
 						}
 					}
 				}
 
 				fileHash, err = service.FileSHA256(dirPath)
 				if err != nil {
-					color.Red("error calculating file hash: %s", err)
-					return nil
+					return fmt.Errorf("error calculating file hash: %s", err)
 				}
 
 				err = service.UpdateHash(domain, node.ID, fileHash)
 				if err != nil {
-					color.Red("error update hash: %s, %s", node.Name, err.Error())
-					return nil
+					return fmt.Errorf("error update hash: %s, %s", node.Name, err.Error())
 				}
 			}
 		}
@@ -163,12 +179,18 @@ func fromDiskRecursive(domain string, localPath string, parentID *int) error {
 		return err
 	}
 
-	color.Blue("localPath: %s", localPath)
+	if isDebug {
+		color.Yellow("localPath: %s", localPath)
+	}
 
 	for _, le := range localEntries {
-		color.Blue("localEntries - %s", le.Name())
+		if isDebug {
+			color.Yellow("localEntries - %s", le.Name())
+		}
 		if _, ok := cloudNames[le.Name()]; !ok {
-			color.Blue("Локально есть файл или папка %s, которой нет в облаке, удаляем путь: %s", le.Name(), filepath.Join(localPath, le.Name()))
+			if isDebug {
+				color.Yellow("Локально есть файл или папка %s, которой нет в облаке, удаляем путь: %s", le.Name(), filepath.Join(localPath, le.Name()))
+			}
 			// папки или файла нет в облаке, удаляем
 			err := os.RemoveAll(filepath.Join(localPath, le.Name()))
 			if err != nil {
