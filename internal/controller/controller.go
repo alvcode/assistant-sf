@@ -51,6 +51,7 @@ func InitController(rootCmd *cobra.Command, ctx context.Context) {
 					stopSpinner()
 				}
 				color.Red(err.Error())
+				return nil
 			}
 			if !debugFlag {
 				stopSpinner()
@@ -77,6 +78,7 @@ func InitController(rootCmd *cobra.Command, ctx context.Context) {
 					stopSpinner()
 				}
 				color.Red(err.Error())
+				return nil
 			}
 			if !debugFlag {
 				stopSpinner()
@@ -109,6 +111,7 @@ func InitController(rootCmd *cobra.Command, ctx context.Context) {
 					stopSpinner()
 				}
 				color.Red(err.Error())
+				return nil
 			}
 			if !debugFlag {
 				stopSpinner()
