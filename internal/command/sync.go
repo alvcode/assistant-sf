@@ -25,7 +25,7 @@ func SyncRun(ctx context.Context, head string, isDebug bool) error {
 		color.Yellow("sync folder exists")
 	}
 
-	err := syncRecursive(cnf.AssistantURL, head, cnf.FolderPath, nil, isDebug)
+	err := syncRecursive(cnf.AssistantURL, head, cnf.FolderPath, nil, cnf.ExcludeFolders, isDebug)
 	if err != nil {
 		return err
 	}
@@ -33,7 +33,7 @@ func SyncRun(ctx context.Context, head string, isDebug bool) error {
 	return nil
 }
 
-func syncRecursive(domain string, head string, localPath string, parentID *int, isDebug bool) error {
+func syncRecursive(domain string, head string, localPath string, parentID *int, excludeFolders []string, isDebug bool) error {
 	var convertParent int
 	if parentID != nil {
 		convertParent = *parentID
@@ -56,6 +56,23 @@ func syncRecursive(domain string, head string, localPath string, parentID *int, 
 		if isDebug {
 			color.Yellow("========= Cloud - Обработка ноды: %s ==========", node.Name)
 		}
+
+		if node.Type == dict.StructTypeFolder {
+			needContinue := false
+			for _, excludeFName := range excludeFolders {
+				if excludeFName == node.Name {
+					if isDebug {
+						color.Yellow("Директория добавлена в исключения. Пропускаем")
+					}
+					needContinue = true
+					break
+				}
+			}
+			if needContinue {
+				continue
+			}
+		}
+
 		cloudNames[node.Name] = node
 		dirPath := filepath.Join(localPath, node.Name)
 
@@ -77,7 +94,7 @@ func syncRecursive(domain string, head string, localPath string, parentID *int, 
 
 			// рекурсивно обойти вложенные
 			id := node.ID
-			if err := syncRecursive(domain, head, dirPath, &id, isDebug); err != nil {
+			if err := syncRecursive(domain, head, dirPath, &id, excludeFolders, isDebug); err != nil {
 				return err
 			}
 		} else if node.Type == dict.StructTypeFile {
@@ -254,6 +271,20 @@ func syncRecursive(domain string, head string, localPath string, parentID *int, 
 		node, ok := cloudNames[le.Name()]
 
 		if localIsDir {
+			needContinue := false
+			for _, excludeFName := range excludeFolders {
+				if excludeFName == le.Name() {
+					if isDebug {
+						color.Yellow("Директория добавлена в исключения. Пропускаем")
+					}
+					needContinue = true
+					break
+				}
+			}
+			if needContinue {
+				continue
+			}
+
 			if !ok {
 				if isDebug {
 					color.Yellow("На сервере папки нет. Создаем. Тут надо получать ID для рекурсивного проваливания. А может быть обновлять по ключу ноду из ответа")
@@ -270,7 +301,7 @@ func syncRecursive(domain string, head string, localPath string, parentID *int, 
 				}
 				node, ok = cloudNames[le.Name()]
 				if ok {
-					if err := syncRecursive(domain, head, dirPath, &node.ID, isDebug); err != nil {
+					if err := syncRecursive(domain, head, dirPath, &node.ID, excludeFolders, isDebug); err != nil {
 						return err
 					}
 				}
