@@ -10,9 +10,10 @@ import (
 )
 
 type Config struct {
-	AssistantURL string `yaml:"assistant_url" env:"ASSISTANT_URL" env-required:"true"`
-	FolderPath   string `yaml:"folder_path" env:"FOLDER_PATH" env-required:"true"`
-	AppName      string `yaml:"app_name" env:"APP_NAME" env-default:"ast-sync-folder"`
+	AssistantURL   string   `yaml:"assistant_url" env:"ASSISTANT_URL" env-required:"true"`
+	FolderPath     string   `yaml:"folder_path" env:"FOLDER_PATH" env-required:"true"`
+	AppName        string   `yaml:"app_name" env:"APP_NAME" env-default:"ast-sync-folder"`
+	ExcludeFolders []string `yaml:"exclude_folders"`
 }
 
 func MustLoad(ctx context.Context) *Config {

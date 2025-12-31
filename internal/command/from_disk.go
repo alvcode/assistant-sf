@@ -24,7 +24,7 @@ func FromDiskRun(ctx context.Context, isDebug bool) error {
 		color.Yellow("sync folder exists")
 	}
 
-	err := fromDiskRecursive(cnf.AssistantURL, cnf.FolderPath, nil, isDebug)
+	err := fromDiskRecursive(cnf.AssistantURL, cnf.FolderPath, nil, cnf.ExcludeFolders, isDebug)
 	if err != nil {
 		return err
 	}
@@ -32,7 +32,7 @@ func FromDiskRun(ctx context.Context, isDebug bool) error {
 	return nil
 }
 
-func fromDiskRecursive(domain string, localPath string, parentID *int, isDebug bool) error {
+func fromDiskRecursive(domain string, localPath string, parentID *int, excludeFolders []string, isDebug bool) error {
 	var convertParent int
 	if parentID != nil {
 		convertParent = *parentID
@@ -56,6 +56,22 @@ func fromDiskRecursive(domain string, localPath string, parentID *int, isDebug b
 			color.Yellow("======= Обработка ноды: %s ==========", node.Name)
 		}
 
+		if node.Type == dict.StructTypeFolder {
+			needContinue := false
+			for _, excludeFName := range excludeFolders {
+				if excludeFName == node.Name {
+					if isDebug {
+						color.Yellow("Директория добавлена в исключения. Пропускаем")
+					}
+					needContinue = true
+					break
+				}
+			}
+			if needContinue {
+				continue
+			}
+		}
+
 		cloudNames[node.Name] = node
 		dirPath := filepath.Join(localPath, node.Name)
 
@@ -77,7 +93,7 @@ func fromDiskRecursive(domain string, localPath string, parentID *int, isDebug b
 
 			// рекурсивно обойти вложенные
 			id := node.ID
-			if err := fromDiskRecursive(domain, dirPath, &id, isDebug); err != nil {
+			if err := fromDiskRecursive(domain, dirPath, &id, excludeFolders, isDebug); err != nil {
 				return err
 			}
 		} else if node.Type == dict.StructTypeFile {

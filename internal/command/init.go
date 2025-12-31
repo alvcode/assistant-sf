@@ -10,8 +10,9 @@ import (
 )
 
 type Config struct {
-	AssistantURL string `yaml:"assistant_url"`
-	FolderPath   string `yaml:"folder_path"`
+	AssistantURL   string   `yaml:"assistant_url"`
+	FolderPath     string   `yaml:"folder_path"`
+	ExcludeFolders []string `yaml:"exclude_folders"`
 }
 
 func InitRun() error {
@@ -26,8 +27,9 @@ func InitRun() error {
 	}
 
 	cfg := Config{
-		AssistantURL: "https://you-domain.com",
-		FolderPath:   "/path/to/sync/folder",
+		AssistantURL:   "https://you-domain.com",
+		FolderPath:     "/path/to/sync/folder",
+		ExcludeFolders: nil,
 	}
 
 	data, err := yaml.Marshal(cfg)

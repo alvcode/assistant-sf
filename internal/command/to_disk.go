@@ -25,7 +25,7 @@ func ToDiskRun(ctx context.Context, isDebug bool) error {
 		color.Yellow("folder exists")
 	}
 
-	err := toDiskRecursive(cnf.AssistantURL, cnf.FolderPath, nil, isDebug)
+	err := toDiskRecursive(cnf.AssistantURL, cnf.FolderPath, nil, cnf.ExcludeFolders, isDebug)
 	if err != nil {
 		return err
 	}
@@ -33,7 +33,7 @@ func ToDiskRun(ctx context.Context, isDebug bool) error {
 	return nil
 }
 
-func toDiskRecursive(domain string, localPath string, parentID *int, isDebug bool) error {
+func toDiskRecursive(domain string, localPath string, parentID *int, excludeFolders []string, isDebug bool) error {
 	var convertParent int
 	if parentID != nil {
 		convertParent = *parentID
@@ -59,7 +59,18 @@ func toDiskRecursive(domain string, localPath string, parentID *int, isDebug boo
 	cloudNames := make(map[string]*dto.DriveTree)
 
 	for _, node := range tree {
-		cloudNames[node.Name] = node
+		needContinue := false
+		if node.Type == dict.StructTypeFolder {
+			for _, excludeFName := range excludeFolders {
+				if excludeFName == node.Name {
+					needContinue = true
+					break
+				}
+			}
+		}
+		if !needContinue {
+			cloudNames[node.Name] = node
+		}
 	}
 
 	for _, le := range localEntries {
@@ -82,6 +93,21 @@ func toDiskRecursive(domain string, localPath string, parentID *int, isDebug boo
 			if isDebug {
 				color.Yellow("Это папка")
 			}
+
+			needContinue := false
+			for _, excludeFName := range excludeFolders {
+				if excludeFName == le.Name() {
+					if isDebug {
+						color.Yellow("Директория добавлена в исключения. Пропускаем")
+					}
+					needContinue = true
+					break
+				}
+			}
+			if needContinue {
+				continue
+			}
+
 			node, ok := cloudNames[le.Name()]
 
 			if !ok || node.Type != dict.StructTypeFolder {
@@ -109,7 +135,7 @@ func toDiskRecursive(domain string, localPath string, parentID *int, isDebug boo
 
 				node, ok = cloudNames[le.Name()]
 				if ok {
-					if err := toDiskRecursive(domain, dirPath, &node.ID, isDebug); err != nil {
+					if err := toDiskRecursive(domain, dirPath, &node.ID, excludeFolders, isDebug); err != nil {
 						return err
 					}
 				}
@@ -117,7 +143,7 @@ func toDiskRecursive(domain string, localPath string, parentID *int, isDebug boo
 				if isDebug {
 					color.Yellow("На сервере папка есть. Рекурсивное проваливание")
 				}
-				if err := toDiskRecursive(domain, dirPath, &node.ID, isDebug); err != nil {
+				if err := toDiskRecursive(domain, dirPath, &node.ID, excludeFolders, isDebug); err != nil {
 					return err
 				}
 			}
