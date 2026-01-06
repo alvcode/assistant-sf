@@ -3,7 +3,6 @@ package service
 import (
 	"assistant-sf/internal/dict"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -77,20 +76,15 @@ func ValidateSyncPath(path string) error {
 
 	p := normalizePath(path)
 
-	fmt.Println("link: ", p)
-
 	if reFsRoot.MatchString(p) {
-		fmt.Println("yes root")
 		return ErrForbiddenPath
 	}
 
 	if reUsersRoot.MatchString(p) {
-		fmt.Println("yes user")
 		return ErrForbiddenPath
 	}
 
 	if reUserHome.MatchString(p) {
-		fmt.Println("yes home")
 		return ErrForbiddenPath
 	}
 
