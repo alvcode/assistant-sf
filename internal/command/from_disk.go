@@ -5,6 +5,7 @@ import (
 	"assistant-sf/internal/dict"
 	"assistant-sf/internal/dto"
 	"assistant-sf/internal/service"
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -23,6 +24,19 @@ func FromDiskRun(ctx context.Context, isDebug bool) error {
 	err := service.ValidateSyncPath(cnf.FolderPath)
 	if err != nil {
 		return err
+	}
+
+	scanner := bufio.NewScanner(os.Stdin)
+	fmt.Print("The folder on this device will be overwritten with data from the cloud. Continue? (Y/n): ")
+	if !scanner.Scan() {
+		if err := scanner.Err(); err != nil {
+			return err
+		}
+		return fmt.Errorf("failed to read value")
+	}
+	confirm := scanner.Text()
+	if confirm != "Y" {
+		return fmt.Errorf("interrupted. You have not consented to continue")
 	}
 
 	if isDebug {
