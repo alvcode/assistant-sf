@@ -19,6 +19,9 @@ sync-server:
 sync-local:
 	go run cmd/main.go sync --head local
 
+test:
+	go test ./tests/...
+
 build-linux:
 	GOOS=linux GOARCH=amd64 go build -o ./cmd/build/syncf ./cmd/main.go
 

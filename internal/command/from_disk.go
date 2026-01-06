@@ -20,11 +20,16 @@ func FromDiskRun(ctx context.Context, isDebug bool) error {
 		return errors.New("folder does not exist. Create a folder and specify the path to it in the configuration")
 	}
 
+	err := service.ValidateSyncPath(cnf.FolderPath)
+	if err != nil {
+		return err
+	}
+
 	if isDebug {
 		color.Yellow("sync folder exists")
 	}
 
-	err := fromDiskRecursive(cnf.AssistantURL, cnf.FolderPath, nil, cnf.ExcludeFolders, isDebug)
+	err = fromDiskRecursive(cnf.AssistantURL, cnf.FolderPath, nil, cnf.ExcludeFolders, isDebug)
 	if err != nil {
 		return err
 	}

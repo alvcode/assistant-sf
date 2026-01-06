@@ -21,11 +21,16 @@ func SyncRun(ctx context.Context, head string, isDebug bool) error {
 		return errors.New("folder does not exist. Create a folder and specify the path to it in the configuration")
 	}
 
+	err := service.ValidateSyncPath(cnf.FolderPath)
+	if err != nil {
+		return err
+	}
+
 	if isDebug {
 		color.Yellow("sync folder exists")
 	}
 
-	err := syncRecursive(cnf.AssistantURL, head, cnf.FolderPath, nil, cnf.ExcludeFolders, isDebug)
+	err = syncRecursive(cnf.AssistantURL, head, cnf.FolderPath, nil, cnf.ExcludeFolders, isDebug)
 	if err != nil {
 		return err
 	}
