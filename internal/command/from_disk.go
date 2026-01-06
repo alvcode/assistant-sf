@@ -39,13 +39,25 @@ func FromDiskRun(ctx context.Context, isDebug bool) error {
 		return fmt.Errorf("interrupted. You have not consented to continue")
 	}
 
+	stopSpinner := func() {}
+	if !isDebug {
+		stopSpinner = service.StartSpinner("Processing...")
+	}
+
 	if isDebug {
 		color.Yellow("sync folder exists")
 	}
 
 	err = fromDiskRecursive(cnf.AssistantURL, cnf.FolderPath, nil, cnf.ExcludeFolders, isDebug)
 	if err != nil {
+		if !isDebug {
+			stopSpinner()
+		}
 		return err
+	}
+
+	if !isDebug {
+		stopSpinner()
 	}
 
 	return nil

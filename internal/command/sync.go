@@ -26,13 +26,25 @@ func SyncRun(ctx context.Context, head string, isDebug bool) error {
 		return err
 	}
 
+	stopSpinner := func() {}
+	if !isDebug {
+		stopSpinner = service.StartSpinner("Processing...")
+	}
+
 	if isDebug {
 		color.Yellow("sync folder exists")
 	}
 
 	err = syncRecursive(cnf.AssistantURL, head, cnf.FolderPath, nil, cnf.ExcludeFolders, isDebug)
 	if err != nil {
+		if !isDebug {
+			stopSpinner()
+		}
 		return err
+	}
+
+	if !isDebug {
+		stopSpinner()
 	}
 
 	return nil

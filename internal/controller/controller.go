@@ -2,7 +2,6 @@ package controller
 
 import (
 	"assistant-sf/internal/command"
-	"assistant-sf/internal/service"
 	"context"
 	"fmt"
 	"github.com/fatih/color"
@@ -40,22 +39,12 @@ func InitController(rootCmd *cobra.Command, ctx context.Context) {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			debugFlag, _ := cmd.Flags().GetBool("debug")
 
-			stopSpinner := func() {}
-			if !debugFlag {
-				stopSpinner = service.StartSpinner("Processing...")
-			}
-
 			err := command.FromDiskRun(ctx, debugFlag)
 			if err != nil {
-				if !debugFlag {
-					stopSpinner()
-				}
 				color.Red(err.Error())
 				return nil
 			}
-			if !debugFlag {
-				stopSpinner()
-			}
+
 			return nil
 		}}
 	rootCmd.AddCommand(fromDiskCommand)
@@ -90,22 +79,12 @@ func InitController(rootCmd *cobra.Command, ctx context.Context) {
 				return nil
 			}
 
-			stopSpinner := func() {}
-			if !debugFlag {
-				stopSpinner = service.StartSpinner("Processing...")
-			}
-
 			err := command.SyncRun(ctx, headFlag, debugFlag)
 			if err != nil {
-				if !debugFlag {
-					stopSpinner()
-				}
 				color.Red(err.Error())
 				return nil
 			}
-			if !debugFlag {
-				stopSpinner()
-			}
+
 			return nil
 		}}
 	rootCmd.AddCommand(syncCommand)
