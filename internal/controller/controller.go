@@ -67,22 +67,12 @@ func InitController(rootCmd *cobra.Command, ctx context.Context) {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			debugFlag, _ := cmd.Flags().GetBool("debug")
 
-			stopSpinner := func() {}
-			if !debugFlag {
-				stopSpinner = service.StartSpinner("Processing...")
-			}
-
 			err := command.ToDiskRun(ctx, debugFlag)
 			if err != nil {
-				if !debugFlag {
-					stopSpinner()
-				}
 				color.Red(err.Error())
 				return nil
 			}
-			if !debugFlag {
-				stopSpinner()
-			}
+
 			return nil
 		}}
 	rootCmd.AddCommand(toDiskCommand)
