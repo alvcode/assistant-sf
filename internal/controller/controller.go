@@ -3,9 +3,14 @@ package controller
 import (
 	"assistant-sf/internal/command"
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
+	"io"
 )
 
 func InitController(rootCmd *cobra.Command, ctx context.Context) {
@@ -98,4 +103,58 @@ func InitController(rootCmd *cobra.Command, ctx context.Context) {
 		),
 	)
 	syncCommand.PersistentFlags().Bool("debug", false, "Enable debug mode")
+
+	cryptCommand := &cobra.Command{
+		Use:   "crypt",
+		Short: "Two-way synchronization",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			key, _ := hex.DecodeString("6368616e676520746869732070617373776f726420746f206120736563726574")
+			plaintext := []byte("exampleplaintext")
+
+			block, err := aes.NewCipher(key)
+			if err != nil {
+				panic(err.Error())
+			}
+
+			aesgcm, err := cipher.NewGCM(block)
+			if err != nil {
+				panic(err.Error())
+			}
+
+			// Never use more than 2^32 random nonces with a given key because of the risk of a repeat.
+			nonce := make([]byte, aesgcm.NonceSize())
+			if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+				panic(err.Error())
+			}
+
+			ciphertext := aesgcm.Seal(nil, nonce, plaintext, nil)
+			fmt.Printf("nonce: %x\n", nonce)
+			fmt.Printf("ciphertext: %x\n", ciphertext)
+
+			// ========================= decrypt
+
+			key, _ = hex.DecodeString("6368616e676520746869732070617373776f726420746f206120736563726574")
+			//ciphertext, _ = hex.DecodeString(string(ciphertext))
+			//nonce, _ = hex.DecodeString(string(nonce))
+
+			block, err = aes.NewCipher(key)
+			if err != nil {
+				panic(err.Error())
+			}
+
+			aesgcm, err = cipher.NewGCM(block)
+			if err != nil {
+				panic(err.Error())
+			}
+
+			plaintext, err = aesgcm.Open(nil, nonce, ciphertext, nil)
+			if err != nil {
+				panic(err.Error())
+			}
+
+			fmt.Printf("%s\n", plaintext)
+
+			return nil
+		}}
+	rootCmd.AddCommand(cryptCommand)
 }

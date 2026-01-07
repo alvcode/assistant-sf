@@ -19,6 +19,9 @@ sync-server:
 sync-local:
 	go run cmd/main.go sync --head local
 
+crypt:
+	go run cmd/main.go crypt
+
 test:
 	go test ./tests/...
 
